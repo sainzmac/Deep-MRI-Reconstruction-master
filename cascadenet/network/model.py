@@ -84,6 +84,8 @@ def build_cascade_cnn_from_list(shape, net_meta, lmda=None):
     output_layer = input_layer
     return net, output_layer
 
+#hola
+
 
 def build_d2_c2(shape):
     def cascade_d2(pr, net, input_layer, **kwargs):
