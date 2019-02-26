@@ -3,22 +3,36 @@ import cascadenet.network.layers as l
 from collections import OrderedDict
 
 
-def cascade_resnet(pr, net, input_layer, n=5, nf=64, b=lasagne.init.Constant, **kwargs):
-    shape = lasagne.layers.get_output_shape(input_layer)
+# def cascade_resnet(pr, net, input_layer, n=5, nf=64, b=lasagne.init.Constant, **kwargs):
+#     shape = lasagne.layers.get_output_shape(input_layer)
+#     n_channel = shape[1]
+#     net[pr+'conv1'] = l.Conv(input_layer, nf, 3, b=b(), name=pr+'conv1')
+
+#     for i in range(2, n):
+#         net[pr+'conv%d'%i] = l.Conv(net[pr+'conv%d'%(i-1)], nf, 3, b=b(),
+#                                     name=pr+'conv%d'%i)
+
+#     net[pr+'conv_aggr'] = l.ConvAggr(net[pr+'conv%d'%(n-1)], n_channel, 3,
+#                                      b=b(), name=pr+'conv_aggr')
+#     net[pr+'res'] = l.ResidualLayer([net[pr+'conv_aggr'], input_layer],
+#                                     name=pr+'res')
+#     output_layer = net[pr+'res']
+#     return net, output_layer
+def cascade_resnet(pr, net, input_layer, n=5, nf=64,shape, b=lasagne.init.Constant, **kwargs):
     n_channel = shape[1]
-    net[pr+'conv1'] = l.Conv(input_layer, nf, 3, b=b(), name=pr+'conv1')
+    net[pr+'conv1'] = tf.layers.conv2d(inputs=input_layer, filters=nf, kernel_size=[3, 3], padding="same", activation=tf.nn.relu,data_format='NCHW', name=pr+'conv1')
+   
+    for i in range(2,n):
+        net[pr+'conv%d'%i] = tf.layers.conv2d(inputs=net[pr+'conv%d'%(i-1)], filters=nf, kernel_size=[3, 3], padding="same", 
+                                                activation=tf.nn.relu,data_format='NCHW', name=pr+'conv%d'%i)
 
-    for i in range(2, n):
-        net[pr+'conv%d'%i] = l.Conv(net[pr+'conv%d'%(i-1)], nf, 3, b=b(),
-                                    name=pr+'conv%d'%i)
+    net[pr+'conv_aggr'] = tf.layers.conv2d(inputs=net[pr+'conv%d'%(n-1)], n_channel, kernel_size=[3, 3], padding="same",
+                                             activation=tf.nn.relu,data_format='NCHW', name=pr+'conv_aggr')
 
-    net[pr+'conv_aggr'] = l.ConvAggr(net[pr+'conv%d'%(n-1)], n_channel, 3,
-                                     b=b(), name=pr+'conv_aggr')
-    net[pr+'res'] = l.ResidualLayer([net[pr+'conv_aggr'], input_layer],
-                                    name=pr+'res')
+    #ResidualLayer
+    net[pr+'res']=tf.add(net[pr+'conv_aggr'],input_layer, name=pr+'res')
     output_layer = net[pr+'res']
     return net, output_layer
-
 
 def cascade_resnet_3d_avg(pr, net, input_layer, n=5, nf=64,
                           b=lasagne.init.Constant, frame_dist=range(5),
@@ -84,7 +98,6 @@ def build_cascade_cnn_from_list(shape, net_meta, lmda=None):
     output_layer = input_layer
     return net, output_layer
 
-#hola
 
 
 def build_d2_c2(shape):
