@@ -1,7 +1,7 @@
 import lasagne
 import cascadenet.network.layers as l
 from collections import OrderedDict
-
+import tensorflow as tf
 
 # def cascade_resnet(pr, net, input_layer, n=5, nf=64, b=lasagne.init.Constant, **kwargs):
 #     shape = lasagne.layers.get_output_shape(input_layer)
@@ -97,6 +97,45 @@ def build_cascade_cnn_from_list(shape, net_meta, lmda=None):
 
     output_layer = input_layer
     return net, output_layer
+
+def build_cascade_cnn_from_list(shape, net_meta, lmda=None):
+     """
+    Create iterative network with more flexibility
+
+    net_meta: [(model1, cascade1_n),(model2, cascade2_n),....(modelm, cascadem_n),]
+    """
+    if not net_meta:
+        raise
+
+    net = OrderedDict()
+    #net config with 3 entries: input, kspace_input, mask
+    #sess = tf.Session()
+    input_layer = tf.placeholder('float', shape, name='input')
+    kspace_input_layer = tf.placeholder('float', shape, name='kspace_input')
+    mask_layer = tf.placeholder('float', shape, name='mask')
+    net['input'] = input_layer
+    net['kspace_input'] = kspace_input_layer
+    net['mask'] = mask_layer
+    j = 0
+    for cascade_net, cascade_n in net_meta:
+        # Cascade layer
+        for i in range(cascade_n):
+            pr = 'c%d_' % j
+            net, output_layer = cascade_net(pr, net, input_layer,
+                                            **{'cascade_i': j})
+
+            # add data consistency layer
+            net[pr+'dc'] = l.DCLayer([output_layer,
+                                      net['mask'],
+                                      net['kspace_input']],
+                                     shape,
+                                     inv_noise_level=lmda)
+            input_layer = net[pr+'dc']
+            j += 1
+
+    output_layer = input_layer
+    return net, output_layer
+
 
 
 
