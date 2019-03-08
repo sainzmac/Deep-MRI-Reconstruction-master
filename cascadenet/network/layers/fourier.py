@@ -2,8 +2,8 @@ import numpy as np
 import theano
 import theano.tensor as T
 from utils.mymath import fourier_matrix, inverse_fourier_matrix
-from lasagne.layers import Layer
-
+# from lasagne.layers import Layer
+from tensorflow.layers import Layer
 # Ugly but works for now
 try:
     import pygpu

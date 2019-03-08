@@ -39,69 +39,81 @@ class DataConsistencyLayer(MergeLayer):
         return input_shapes[0]
 
 
-class DataConsistencyWithMaskLayer(MergeLayer):
-    '''
-    Data consistency layer
-    '''
+# class DataConsistencyWithMaskLayer(MergeLayer):
+#     '''
+#     Data consistency layer
+#     '''
 
-    def __init__(self, incomings, inv_noise_level=None, **kwargs):
-        super(DataConsistencyWithMaskLayer, self).__init__(incomings, **kwargs)
-        self.inv_noise_level = inv_noise_level
+#     def __init__(self, incomings, inv_noise_level=None, **kwargs):
+#         #super(DataConsistencyWithMaskLayer, self).__init__(incomings, **kwargs)
+#         self.inv_noise_level = inv_noise_level
 
-    def get_output_for(self, inputs, **kwargs):
-        '''
+#     def get_output_for(self, inputs, **kwargs):
+#         '''
 
-        Parameters
-        ------------------------------
-        inputs: 3 4d tensors
-            First is data, second is the mask, third is the k-space samples
+#         Parameters
+#         ------------------------------
+#         inputs: 3 4d tensors
+#             First is data, second is the mask, third is the k-space samples
 
-        Returns
-        ------------------------------
-        output: 4d tensor, data input with entries replaced with the sampled
-        values
-        '''
-        x = inputs[0]
-        mask = inputs[1]
-        x_sampled = inputs[2]
-        v = self.inv_noise_level
-        if v:  # noisy case
-            out = (x + v * x_sampled) / (1 + v)
-        else:  # noiseless case
-            out = (1 - mask) * x + x_sampled
-        return out
+#         Returns
+#         ------------------------------
+#         output: 4d tensor, data input with entries replaced with the sampled
+#         values
+#         '''
+#         x = inputs[0]
+#         mask = inputs[1]
+#         x_sampled = inputs[2]
+#         v = self.inv_noise_level
+#         if v:  # noisy case
+#             out = (x + v * x_sampled) / (1 + v)
+#         else:  # noiseless case
+#             out = (1 - mask) * x + x_sampled
+#         return out
 
-    def get_output_shape_for(self, input_shapes, **kwargs):
-        return input_shapes[0]
+#     def get_output_shape_for(self, input_shapes, **kwargs):
+#         return input_shapes[0]
 
 
-class DCLayer(MergeLayer):
-    '''
-    Data consistency layer
-    '''
-    def __init__(self, incomings, data_shape, inv_noise_level=None, **kwargs):
-        if 'name' not in kwargs:
-            kwargs['name'] = 'dc'
+# class DCLayer(MergeLayer):
+#     '''
+#     Data consistency layer
+#     '''
+#     def __init__(self, incomings, data_shape, inv_noise_level=None, **kwargs):
+#         if 'name' not in kwargs:
+#             kwargs['name'] = 'dc'
 
-        super(DCLayer, self).__init__(incomings, **kwargs)
-        self.inv_noise_level = inv_noise_level
-        data, mask, sampled = incomings
-        self.data = data
-        self.mask = mask
-        self.sampled = sampled
-        self.dft2 = FFT2Layer(data, data_shape, name='dc_dft2')
-        self.dc = DataConsistencyWithMaskLayer([self.dft2, mask, sampled],
-                                               name='dc_consistency')
-        self.idft2 = FFT2Layer(self.dc, data_shape, inv=True, name='dc_idft2')
+#         #super(DCLayer, self).__init__(incomings, **kwargs)
+#         self.inv_noise_level = inv_noise_level
+#         data, mask, sampled = incomings
+#         self.data = data
+#         self.mask = mask
+#         self.sampled = sampled
+#         self.dft2 = FFT2Layer(data, data_shape, name='dc_dft2')
+#         self.dc = DataConsistencyWithMaskLayer([self.dft2, mask, sampled],
+#                                                name='dc_consistency')
+#         self.idft2 = FFT2Layer(self.dc, data_shape, inv=True, name='dc_idft2')
 
-    def get_output_for(self, inputs, **kwargs):
-        x = inputs[0]
-        mask = inputs[1]
-        x_sampled = inputs[2]
-        return get_output(self.idft2,
-                          {self.data: x,
-                           self.mask: mask,
-                           self.sampled: x_sampled})
+#     def get_output_for(self, inputs, **kwargs):
+#         x = inputs[0]
+#         mask = inputs[1]
+#         x_sampled = inputs[2]
+#         return get_output(self.idft2,
+#                           {self.data: x,
+#                            self.mask: mask,
+#                            self.sampled: x_sampled})
 
-    def get_output_shape_for(self, input_shapes, **kwargs):
-        return input_shapes[0]
+#     def get_output_shape_for(self, input_shapes, **kwargs):
+#         return input_shapes[0]
+# def DCLayer(incomings,data_shape,inv_noise_level):
+#     data, mask, sampled = incomings
+#     dft2 = FFT2Layer(data, data_shape, name='dc_dft2')
+#     if inv_noise_level:  # noisy case
+#         out = (dft2 + v * sampled) / (1 + v)
+#     else:  # noiseless case
+#         out = (1 - mask) * dft2 + sampled
+
+#     idft2 = FFT2Layer(out, data_shape, inv=True, name='dc_idft2')
+#     return idft2
+
+

@@ -2,6 +2,7 @@ import lasagne
 import cascadenet.network.layers as l
 from collections import OrderedDict
 import tensorflow as tf
+from cascadenet.network.layers.fourier import FFT2Layer, FFTCLayer
 
 # def cascade_resnet(pr, net, input_layer, n=5, nf=64, b=lasagne.init.Constant, **kwargs):
 #     shape = lasagne.layers.get_output_shape(input_layer)
@@ -18,16 +19,15 @@ import tensorflow as tf
 #                                     name=pr+'res')
 #     output_layer = net[pr+'res']
 #     return net, output_layer
-def cascade_resnet(pr, net, input_layer, n=5, nf=64,shape, b=lasagne.init.Constant, **kwargs):
-    n_channel = shape[1]
-    net[pr+'conv1'] = tf.layers.conv2d(inputs=input_layer, filters=nf, kernel_size=[3, 3], padding="same", activation=tf.nn.relu,data_format='NCHW', name=pr+'conv1')
-   
+def cascade_resnet(pr, net, input_layer,shape, n=5, nf=64, **kwargs):
+    n_channel = shape[3]
+    net[pr+'conv1'] = tf.layers.conv2d(inputs=input_layer, filters=nf, kernel_size=[3, 3], padding="same", activation=tf.nn.relu, name=pr+'conv1')
     for i in range(2,n):
         net[pr+'conv%d'%i] = tf.layers.conv2d(inputs=net[pr+'conv%d'%(i-1)], filters=nf, kernel_size=[3, 3], padding="same", 
-                                                activation=tf.nn.relu,data_format='NCHW', name=pr+'conv%d'%i)
+                                                activation=tf.nn.relu, name=pr+'conv%d'%i)
 
-    net[pr+'conv_aggr'] = tf.layers.conv2d(inputs=net[pr+'conv%d'%(n-1)], n_channel, kernel_size=[3, 3], padding="same",
-                                             activation=tf.nn.relu,data_format='NCHW', name=pr+'conv_aggr')
+    net[pr+'conv_aggr'] = tf.layers.conv2d(inputs=net[pr+'conv%d'%(n-1)], filters=n_channel, kernel_size=[3, 3], padding="same",
+                                             activation=tf.nn.relu, name=pr+'conv_aggr')
 
     #ResidualLayer
     net[pr+'res']=tf.add(net[pr+'conv_aggr'],input_layer, name=pr+'res')
@@ -62,44 +62,60 @@ def cascade_resnet_3d_avg(pr, net, input_layer, n=5, nf=64,
     output_layer = net[pr+'res']
     return net, output_layer
 
+def DCLayer(incomings,data_shape,inv_noise_level):
+    data, mask, sampled = incomings
+    data = tf.cast(data,tf.complex64)
+    dft2 = tf.fft2d(data, name='dc_dft2')
+    dft2 = tf.cast(data,tf.float32)
+    x = dft2
+    if inv_noise_level:  # noisy case
+        out = (x+ v * sampled) / (1 + v)
+    else:  # noiseless case
+        out = (1 - mask) * x + sampled
+    
+
+    out = tf.cast(out,tf.complex64)
+    idft2 = tf.ifft2d(out, name='dc_idft2')
+    idft2 = tf.cast(idft2,tf.float32)
+    return idft2
+
+# def build_cascade_cnn_from_list(shape, net_meta, lmda=None):
+#     """
+#     Create iterative network with more flexibility
+
+#     net_meta: [(model1, cascade1_n),(model2, cascade2_n),....(modelm, cascadem_n),]
+#     """
+#     if not net_meta:
+#         raise
+
+#     net = OrderedDict()
+#     input_layer, kspace_input_layer, mask_layer = l.get_dc_input_layers(shape)
+#     net['input'] = input_layer
+#     net['kspace_input'] = kspace_input_layer
+#     net['mask'] = mask_layer
+
+#     j = 0
+#     for cascade_net, cascade_n in net_meta:
+#         # Cascade layer
+#         for i in range(cascade_n):
+#             pr = 'c%d_' % j
+#             net, output_layer = cascade_net(pr, net, input_layer,
+#                                             **{'cascade_i': j})
+
+#             # add data consistency layer
+#             net[pr+'dc'] = l.DCLayer([output_layer,
+#                                       net['mask'],
+#                                       net['kspace_input']],
+#                                      shape,
+#                                      inv_noise_level=lmda)
+#             input_layer = net[pr+'dc']
+#             j += 1
+
+#     output_layer = input_layer
+#     return net, output_layer
 
 def build_cascade_cnn_from_list(shape, net_meta, lmda=None):
     """
-    Create iterative network with more flexibility
-
-    net_meta: [(model1, cascade1_n),(model2, cascade2_n),....(modelm, cascadem_n),]
-    """
-    if not net_meta:
-        raise
-
-    net = OrderedDict()
-    input_layer, kspace_input_layer, mask_layer = l.get_dc_input_layers(shape)
-    net['input'] = input_layer
-    net['kspace_input'] = kspace_input_layer
-    net['mask'] = mask_layer
-
-    j = 0
-    for cascade_net, cascade_n in net_meta:
-        # Cascade layer
-        for i in range(cascade_n):
-            pr = 'c%d_' % j
-            net, output_layer = cascade_net(pr, net, input_layer,
-                                            **{'cascade_i': j})
-
-            # add data consistency layer
-            net[pr+'dc'] = l.DCLayer([output_layer,
-                                      net['mask'],
-                                      net['kspace_input']],
-                                     shape,
-                                     inv_noise_level=lmda)
-            input_layer = net[pr+'dc']
-            j += 1
-
-    output_layer = input_layer
-    return net, output_layer
-
-def build_cascade_cnn_from_list(shape, net_meta, lmda=None):
-     """
     Create iterative network with more flexibility
 
     net_meta: [(model1, cascade1_n),(model2, cascade2_n),....(modelm, cascadem_n),]
@@ -121,15 +137,10 @@ def build_cascade_cnn_from_list(shape, net_meta, lmda=None):
         # Cascade layer
         for i in range(cascade_n):
             pr = 'c%d_' % j
-            net, output_layer = cascade_net(pr, net, input_layer,
-                                            **{'cascade_i': j})
+            net, output_layer = cascade_net(pr, net, input_layer,shape=shape, **{'cascade_i': j})
 
             # add data consistency layer
-            net[pr+'dc'] = l.DCLayer([output_layer,
-                                      net['mask'],
-                                      net['kspace_input']],
-                                     shape,
-                                     inv_noise_level=lmda)
+            net[pr+'dc'] = DCLayer([output_layer,net['mask'],net['kspace_input']],data_shape=shape,inv_noise_level=lmda)
             input_layer = net[pr+'dc']
             j += 1
 
@@ -141,7 +152,7 @@ def build_cascade_cnn_from_list(shape, net_meta, lmda=None):
 
 def build_d2_c2(shape):
     def cascade_d2(pr, net, input_layer, **kwargs):
-        return cascade_resnet(pr, net, input_layer, n=2)
+        return cascade_resnet(pr, net, input_layer, shape=shape, n=2)
     return build_cascade_cnn_from_list(shape, [(cascade_d2, 2)])
 
 

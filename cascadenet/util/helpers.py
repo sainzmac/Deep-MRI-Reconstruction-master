@@ -54,12 +54,13 @@ def to_lasagne_format(x, mask=False):
     """
     if x.ndim == 4:  # n 3D inputs. reorder axes
         x = np.transpose(x, (0, 2, 3, 1))
-
     if mask:  # Hacky solution
         x = x*(1+1j)
 
-    x = complex2real(x)
 
+    x = complex2real(x)
+   
+    x = np.transpose(x, (0, 2,3, 1))
     return x
 
 
@@ -74,6 +75,8 @@ def from_lasagne_format(x, mask=False):
     if mask:
         x = mask_r2c(x)
     else:
+        x = np.transpose(x, (0, 3,1, 2))
         x = real2complex(x)
+
 
     return x

@@ -9,6 +9,7 @@ import theano.tensor as T
 import lasagne
 import argparse
 import matplotlib.pyplot as plt
+import tensorflow as tf
 
 from os.path import join
 from scipy.io import loadmat
@@ -19,6 +20,7 @@ from utils.metric import complex_psnr
 from cascadenet.network.model import build_d2_c2, build_d5_c5
 from cascadenet.util.helpers import from_lasagne_format
 from cascadenet.util.helpers import to_lasagne_format
+
 
 
 def prep_input(im, acc=4):
@@ -67,7 +69,46 @@ def create_dummy_data():
     return train, validate, test
 
 
-def compile_fn(network, net_config, args):
+# def compile_fn(network, net_config, args):
+#     """
+#     Create Training function and validation function
+#     """
+#     # Hyper-parameters
+#     base_lr = float(args.lr[0])
+#     l2 = float(args.l2[0])
+
+#     # Tf flow
+#     input_var = net_config['input'].input_var
+#     mask_var = net_config['mask'].input_var
+#     kspace_var = net_config['kspace_input'].input_var
+#     target_var = T.tensor4('targets')
+
+#     # Objective
+#     pred = lasagne.layers.get_output(network)
+#     # complex valued signal has 2 channels, which counts as 1.
+#     loss_sq = lasagne.objectives.squared_error(target_var, pred).mean() * 2
+#     if l2:
+#         l2_penalty = lasagne.regularization.regularize_network_params(network, lasagne.regularization.l2)
+#         loss = loss_sq + l2_penalty * l2
+
+#     update_rule = lasagne.updates.adam
+#     params = lasagne.layers.get_all_params(network, trainable=True)
+#     updates = update_rule(loss, params, learning_rate=base_lr)
+
+#     print(' Compiling ... ')
+#     t_start = time.time()
+#     train_fn = theano.function([input_var, mask_var, kspace_var, target_var],
+#                                [loss], updates=updates,
+#                                on_unused_input='ignore')
+
+#     val_fn = theano.function([input_var, mask_var, kspace_var, target_var],
+#                              [loss, pred],
+#                              on_unused_input='ignore')
+#     t_end = time.time()
+#     print(' ... Done, took %.4f s' % (t_end - t_start))
+
+#     return train_fn, val_fn
+def compile_fn(sess, network, net_config, shape, args):
     """
     Create Training function and validation function
     """
@@ -75,37 +116,38 @@ def compile_fn(network, net_config, args):
     base_lr = float(args.lr[0])
     l2 = float(args.l2[0])
 
-    # Theano variables
-    input_var = net_config['input'].input_var
-    mask_var = net_config['mask'].input_var
-    kspace_var = net_config['kspace_input'].input_var
-    target_var = T.tensor4('targets')
-
+    print(net_config['input'])
+    # Tf flow
+    input_var = net_config['input']
+    mask_var = net_config['mask']
+    kspace_var = net_config['kspace_input']
+    target_var = tf.placeholder('float', shape, name='target')
     # Objective
-    pred = lasagne.layers.get_output(network)
+    pred = network
     # complex valued signal has 2 channels, which counts as 1.
-    loss_sq = lasagne.objectives.squared_error(target_var, pred).mean() * 2
+    loss_sq = tf.losses.mean_squared_error(target_var,pred) * 2
     if l2:
-        l2_penalty = lasagne.regularization.regularize_network_params(network, lasagne.regularization.l2)
+        l2_penalty = tf.nn.l2_loss(network)
         loss = loss_sq + l2_penalty * l2
 
-    update_rule = lasagne.updates.adam
-    params = lasagne.layers.get_all_params(network, trainable=True)
-    updates = update_rule(loss, params, learning_rate=base_lr)
-
+    updates = tf.train.AdamOptimizer(base_lr).minimize(loss)
     print(' Compiling ... ')
     t_start = time.time()
-    train_fn = theano.function([input_var, mask_var, kspace_var, target_var],
-                               [loss], updates=updates,
-                               on_unused_input='ignore')
 
-    val_fn = theano.function([input_var, mask_var, kspace_var, target_var],
-                             [loss, pred],
-                             on_unused_input='ignore')
+    def train_fn(input_, mask, kspace, target, loss, updates):
+        feed_dict={input_var: input_, mask_var: mask, kspace_var: kspace, target_var: target}
+        loss_v = sess.run([loss, updates],feed_dict=feed_dict)[0]
+        return loss_v
+    
+    def val_fn(input_, mask, kspace, target, loss, pred):
+        feed_dict={input_var: input_, mask_var: mask, kspace_var: kspace, target_var: target}
+        loss_v,pred_v = sess.run([loss, pred],feed_dict=feed_dict)
+        return loss_v,pred_v
+
     t_end = time.time()
     print(' ... Done, took %.4f s' % (t_end - t_start))
 
-    return train_fn, val_fn
+    return train_fn, val_fn, loss, updates, pred
 
 
 if __name__ == '__main__':
@@ -148,8 +190,8 @@ if __name__ == '__main__':
         os.makedirs(save_dir)
 
     # Specify network
-    input_shape = (batch_size, 2, Nx, Ny)
-    net_config, net,  = build_d2_c2(input_shape)
+    input_shape = (batch_size, Nx, Ny, 2)
+    net_config, net  = build_d2_c2(input_shape)
 
     # # Load D5-C5 with pretrained params
     # net_config, net,  = build_d5_c5(input_shape)
@@ -164,8 +206,9 @@ if __name__ == '__main__':
     print('Undersampling Rate: {:.2f}'.format(sample_und_factor))
 
     # Compile function
-    train_fn, val_fn = compile_fn(net, net_config, args)
-
+    sess = tf.Session()
+    train_fn, val_fn, loss, updates, pred = compile_fn(sess, net, net_config, input_shape, args)
+    sess.run(tf.global_variables_initializer())
 
     # Create dataset
     train, validate, test = create_dummy_data()
@@ -178,19 +221,19 @@ if __name__ == '__main__':
         train_batches = 0
         for im in iterate_minibatch(train, batch_size, shuffle=True):
             im_und, k_und, mask, im_gnd = prep_input(im, acc=acc)
-            err = train_fn(im_und, mask, k_und, im_gnd)[0]
+            err = train_fn(im_und, mask, k_und, im_gnd, loss, updates)
             train_err += err
             train_batches += 1
 
             if args.debug and train_batches == 20:
                 break
-
+ 
         validate_err = 0
         validate_batches = 0
         for im in iterate_minibatch(validate, batch_size, shuffle=False):
             im_und, k_und, mask, im_gnd = prep_input(im, acc=acc)
-            err, pred = val_fn(im_und, mask, k_und, im_gnd)
-            validate_err += err
+            err_v, pred_v = val_fn(im_und, mask, k_und, im_gnd, loss, pred)
+            validate_err += err_v
             validate_batches += 1
 
             if args.debug and validate_batches == 20:
@@ -203,19 +246,19 @@ if __name__ == '__main__':
         test_batches = 0
         for im in iterate_minibatch(test, batch_size, shuffle=False):
             im_und, k_und, mask, im_gnd = prep_input(im, acc=acc)
-
-            err, pred = val_fn(im_und, mask, k_und, im_gnd)
-            test_err += err
+            
+            err_v, pred_v = val_fn(im_und, mask, k_und, im_gnd, loss, pred)
+            test_err += err_v
             for im_i, und_i, pred_i in zip(im,
                                            from_lasagne_format(im_und),
-                                           from_lasagne_format(pred)):
+                                           from_lasagne_format(pred_v)):
                 base_psnr += complex_psnr(im_i, und_i, peak='max')
                 test_psnr += complex_psnr(im_i, pred_i, peak='max')
             test_batches += 1
 
             if save_fig and test_batches % save_every == 0:
                 vis.append((im[0],
-                            from_lasagne_format(pred)[0],
+                            from_lasagne_format(pred_v)[0],
                             from_lasagne_format(im_und)[0],
                             from_lasagne_format(mask, mask=True)[0]))
 
@@ -226,9 +269,9 @@ if __name__ == '__main__':
 
         train_err /= train_batches
         validate_err /= validate_batches
-        test_err /= test_batches
-        base_psnr /= (test_batches*batch_size)
-        test_psnr /= (test_batches*batch_size)
+        # test_err /= test_batches
+        # base_psnr /= (test_batches*batch_size)
+        # test_psnr /= (test_batches*batch_size)
 
         # Then we print the results for this epoch:
         print("Epoch {}/{}".format(epoch+1, num_epoch))
@@ -239,21 +282,21 @@ if __name__ == '__main__':
         print(" base PSNR:\t\t{:.6f}".format(base_psnr))
         print(" test PSNR:\t\t{:.6f}".format(test_psnr))
 
-        # save the model
-        if epoch in [1, 2, num_epoch-1]:
-            if save_fig:
-                i = 0
-                for im_i, pred_i, und_i, mask_i in vis:
-                    plt.imsave(join(save_dir, 'im{0}.png'.format(i)),
-                               abs(np.concatenate([und_i, pred_i,
-                                                   im_i, im_i - pred_i], 1)),
-                               cmap='gray')
-                    plt.imsave(join(save_dir, 'mask{0}.png'.format(i)), mask_i,
-                               cmap='gray')
-                    i += 1
+        # # save the model
+        # if epoch in [1, 2, num_epoch-1]:
+        #     if save_fig:
+        #         i = 0
+        #         for im_i, pred_i, und_i, mask_i in vis:
+        #             plt.imsave(join(save_dir, 'im{0}.png'.format(i)),
+        #                        abs(np.concatenate([und_i, pred_i,
+        #                                            im_i, im_i - pred_i], 1)),
+        #                        cmap='gray')
+        #             plt.imsave(join(save_dir, 'mask{0}.png'.format(i)), mask_i,
+        #                        cmap='gray')
+        #             i += 1
 
-            name = '%s_epoch_%d.npz' % (model_name, epoch)
-            np.savez(join(save_dir, name),
-                     *lasagne.layers.get_all_param_values(net))
-            print('model parameters saved at %s' % join(os.getcwd(), name))
-            print('')
+        #     name = '%s_epoch_%d.npz' % (model_name, epoch)
+        #     np.savez(join(save_dir, name),
+        #              *lasagne.layers.get_all_param_values(net))
+        #     print('model parameters saved at %s' % join(os.getcwd(), name))
+        #     print('')
