@@ -142,10 +142,11 @@ def fft2(inp, norm=None):
     """
 
     s = inp.shape[2:4]
+    print(s)
     cond_norm = _unitary(norm)
     scaling = 1
     if cond_norm == "ortho":
-        scaling = T.sqrt(s.prod().astype(inp.dtype))
+        scaling = np.sqrt(s.prod().astype(inp.dtype))
 
     return fft2_op(inp, s) / scaling
 

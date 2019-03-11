@@ -73,6 +73,7 @@ def from_lasagne_format(x, mask=False):
         x = np.transpose(x, (0, 1, 4, 2, 3))
 
     if mask:
+        x = np.transpose(x, (0, 3,1, 2))
         x = mask_r2c(x)
     else:
         x = np.transpose(x, (0, 3,1, 2))

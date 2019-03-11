@@ -21,7 +21,7 @@ from cascadenet.network.model import build_d2_c2, build_d5_c5
 from cascadenet.util.helpers import from_lasagne_format
 from cascadenet.util.helpers import to_lasagne_format
 
-
+tf.reset_default_graph()
 
 def prep_input(im, acc=4):
     """Undersample the batch, then reformat them into what the network accepts.
@@ -269,9 +269,9 @@ if __name__ == '__main__':
 
         train_err /= train_batches
         validate_err /= validate_batches
-        # test_err /= test_batches
-        # base_psnr /= (test_batches*batch_size)
-        # test_psnr /= (test_batches*batch_size)
+        test_err /= test_batches
+        base_psnr /= (test_batches*batch_size)
+        test_psnr /= (test_batches*batch_size)
 
         # Then we print the results for this epoch:
         print("Epoch {}/{}".format(epoch+1, num_epoch))
@@ -282,21 +282,23 @@ if __name__ == '__main__':
         print(" base PSNR:\t\t{:.6f}".format(base_psnr))
         print(" test PSNR:\t\t{:.6f}".format(test_psnr))
 
-        # # save the model
-        # if epoch in [1, 2, num_epoch-1]:
-        #     if save_fig:
-        #         i = 0
-        #         for im_i, pred_i, und_i, mask_i in vis:
-        #             plt.imsave(join(save_dir, 'im{0}.png'.format(i)),
-        #                        abs(np.concatenate([und_i, pred_i,
-        #                                            im_i, im_i - pred_i], 1)),
-        #                        cmap='gray')
-        #             plt.imsave(join(save_dir, 'mask{0}.png'.format(i)), mask_i,
-        #                        cmap='gray')
-        #             i += 1
+        # save the model
+        if epoch in [1, 2, num_epoch-1]:
+            if save_fig:
+                i = 0
+                for im_i, pred_i, und_i, mask_i in vis:
+                    plt.imsave(join(save_dir, 'im{0}.png'.format(i)),
+                               abs(np.concatenate([und_i, pred_i,
+                                                   im_i, im_i - pred_i], 1)),
+                               cmap='gray')
+                    plt.imsave(join(save_dir, 'mask{0}.png'.format(i)), mask_i,
+                               cmap='gray')
+                    i += 1
 
-        #     name = '%s_epoch_%d.npz' % (model_name, epoch)
-        #     np.savez(join(save_dir, name),
-        #              *lasagne.layers.get_all_param_values(net))
-        #     print('model parameters saved at %s' % join(os.getcwd(), name))
-        #     print('')
+                    #png is lossy!!! tiff
+
+#             name = '%s_epoch_%d.npz' % (model_name, epoch)
+#             np.savez(join(save_dir, name),
+#                      *lasagne.layers.get_all_param_values(net))
+#             print('model parameters saved at %s' % join(os.getcwd(), name))
+#             print('')

@@ -1,9 +1,10 @@
+
 import lasagne
 import cascadenet.network.layers as l
 from collections import OrderedDict
 import tensorflow as tf
 from cascadenet.network.layers.fourier import FFT2Layer, FFTCLayer
-
+import numpy as np
 # def cascade_resnet(pr, net, input_layer, n=5, nf=64, b=lasagne.init.Constant, **kwargs):
 #     shape = lasagne.layers.get_output_shape(input_layer)
 #     n_channel = shape[1]
@@ -21,12 +22,14 @@ from cascadenet.network.layers.fourier import FFT2Layer, FFTCLayer
 #     return net, output_layer
 def cascade_resnet(pr, net, input_layer,shape, n=5, nf=64, **kwargs):
     n_channel = shape[3]
-    net[pr+'conv1'] = tf.layers.conv2d(inputs=input_layer, filters=nf, kernel_size=[3, 3], padding="same", activation=tf.nn.relu, name=pr+'conv1')
+    he_init = tf.contrib.layers.variance_scaling_initializer()
+    net[pr+'conv1'] = tf.layers.conv2d(inputs=input_layer, filters=nf, kernel_size=[3, 3], kernel_initializer=he_init, padding="same", activation=tf.nn.relu, name=pr+'conv1')
     for i in range(2,n):
-        net[pr+'conv%d'%i] = tf.layers.conv2d(inputs=net[pr+'conv%d'%(i-1)], filters=nf, kernel_size=[3, 3], padding="same", 
+        net[pr+'conv%d'%i] = tf.layers.conv2d(inputs=net[pr+'conv%d'%(i-1)], filters=nf, kernel_size=[3, 3], kernel_initializer=he_init, padding="same", 
                                                 activation=tf.nn.relu, name=pr+'conv%d'%i)
-
-    net[pr+'conv_aggr'] = tf.layers.conv2d(inputs=net[pr+'conv%d'%(n-1)], filters=n_channel, kernel_size=[3, 3], padding="same",
+    
+    #ConvAgre - Back to image domain
+    net[pr+'conv_aggr'] = tf.layers.conv2d(inputs=net[pr+'conv%d'%(n-1)], filters=n_channel, kernel_size=[3, 3], kernel_initializer=he_init, padding="same",
                                              activation=tf.nn.relu, name=pr+'conv_aggr')
 
     #ResidualLayer
@@ -64,19 +67,20 @@ def cascade_resnet_3d_avg(pr, net, input_layer, n=5, nf=64,
 
 def DCLayer(incomings,data_shape,inv_noise_level):
     data, mask, sampled = incomings
-    data = tf.cast(data,tf.complex64)
-    dft2 = tf.fft2d(data, name='dc_dft2')
-    dft2 = tf.cast(data,tf.float32)
-    x = dft2
+    data_c = tf.complex(data[:,:,:,0], data[:,:,:,1])
+    dft2 = tf.fft2d(data_c, name='dc_dft2')
+    x = tf.stack([tf.real(dft2), tf.imag(dft2)])
+    x = tf.transpose(x,(1,2,3,0))
     if inv_noise_level:  # noisy case
         out = (x+ v * sampled) / (1 + v)
     else:  # noiseless case
         out = (1 - mask) * x + sampled
     
 
-    out = tf.cast(out,tf.complex64)
-    idft2 = tf.ifft2d(out, name='dc_idft2')
-    idft2 = tf.cast(idft2,tf.float32)
+    out_c = tf.complex(out[:,:,:,0], out[:,:,:,1])
+    idft2 = tf.ifft2d(out_c, name='dc_idft2')
+    idft2 = tf.stack([tf.real(idft2), tf.imag(idft2)])
+    idft2 = tf.transpose(idft2,(1,2,3,0))
     return idft2
 
 # def build_cascade_cnn_from_list(shape, net_meta, lmda=None):
@@ -139,7 +143,7 @@ def build_cascade_cnn_from_list(shape, net_meta, lmda=None):
             pr = 'c%d_' % j
             net, output_layer = cascade_net(pr, net, input_layer,shape=shape, **{'cascade_i': j})
 
-            # add data consistency layer
+            #add data consistency layer
             net[pr+'dc'] = DCLayer([output_layer,net['mask'],net['kspace_input']],data_shape=shape,inv_noise_level=lmda)
             input_layer = net[pr+'dc']
             j += 1
